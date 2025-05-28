@@ -333,6 +333,3 @@ def main():
         cv2.imshow(winname, cv2.cvtColor(result, cv2.COLOR_BGR2RGB))
     cv2.waitKey(0)
     cv2.destroyAllWindows()
-
-if __name__ == "__main__":
-    main()

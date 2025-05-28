@@ -151,9 +151,3 @@ def advanced_edge_processing(img):
     opened = cv2.morphologyEx(closed, cv2.MORPH_OPEN, kernel)
 
     return opened
-
-
-def plate_recognition(img):
-    """车牌识别预处理流程"""
-    # 这里可以调用完整的预处理流程
-    return advanced_edge_processing(img)

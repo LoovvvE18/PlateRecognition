@@ -4,7 +4,7 @@ from process_utils import (
     img_read, to_gray, to_binary, gaussian_blur, canny_edge, invert_color,
     resize_image, morphology_opening, morphology_closing, add_weighted_subtract,
     otsu_threshold, hsv_conversion, color_mask_extraction, bitwise_and_with_mask,
-    advanced_edge_processing, plate_recognition
+    advanced_edge_processing
 )
 import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext
