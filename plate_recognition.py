@@ -9,11 +9,14 @@ MAX_WIDTH = 1000  # 原始图片最大宽度
 Min_Area = 2000  # 车牌区域允许最大面积
 PROVINCE_START = 1000
 
+
 class StatModel(object):
     def load(self, fn):
         self.model = self.model.load(fn)
+
     def save(self, fn):
         self.model.save(fn)
+
 
 class SVM(StatModel):
     def __init__(self, C=1, gamma=0.5):
@@ -22,9 +25,11 @@ class SVM(StatModel):
         self.model.setC(C)
         self.model.setKernel(cv2.ml.SVM_RBF)
         self.model.setType(cv2.ml.SVM_C_SVC)
+
     def predict(self, samples):
         r = self.model.predict(samples)
         return r[1].ravel()
+
 
 class CardPredictor:
     def __init__(self):
@@ -34,20 +39,22 @@ class CardPredictor:
     def train_svm(self):
         self.model = SVM(C=1, gamma=0.5)
         self.modelchinese = SVM(C=1, gamma=0.5)
-        if os.path.exists("../DIP_Ys-main/svm.dat"):
+        if os.path.exists("svm.dat"):
             self.model.load("svm.dat")
-        if os.path.exists("../DIP_Ys-main/svmchinese.dat"):
+        if os.path.exists("svmchinese.dat"):
             self.modelchinese.load("svmchinese.dat")
 
     def img_first_pre(self, car_pic_file):
         if type(car_pic_file) == type(""):
-            img = img_math.img_read(car_pic_file)
+            img = cv2.imread(car_pic_file)
         else:
             img = car_pic_file
         pic_hight, pic_width = img.shape[:2]
         if pic_width > MAX_WIDTH:
             resize_rate = MAX_WIDTH / pic_width
             img = cv2.resize(img, (MAX_WIDTH, int(pic_hight * resize_rate)), interpolation=cv2.INTER_AREA)
+        if not os.path.exists("tmp"):
+            os.mkdir("tmp")
         cv2.imwrite("tmp/step1_resize.jpg", img)
         img = cv2.GaussianBlur(img, (5, 5), 0)
         cv2.imwrite("tmp/step2_gaussian.jpg", img)
@@ -138,14 +145,14 @@ class CardPredictor:
                 if wave_peaks[0][1] - wave_peaks[0][0] < max_wave_dis / 3 and wave_peaks[0][0] == 0:
                     wave_peaks.pop(0)
                 cur_dis = 0
-                for i, wave in enumerate(wave_peaks):
+                for j, wave in enumerate(wave_peaks):
                     if wave[1] - wave[0] + cur_dis > max_wave_dis * 0.6:
                         break
                     else:
                         cur_dis += wave[1] - wave[0]
-                if i > 0:
-                    wave = (wave_peaks[0][0], wave_peaks[i][1])
-                    wave_peaks = wave_peaks[i + 1:]
+                if j > 0:
+                    wave = (wave_peaks[0][0], wave_peaks[j][1])
+                    wave_peaks = wave_peaks[j + 1:]
                     wave_peaks.insert(0, wave)
                 point = wave_peaks[2]
                 point_img = gray_img[:, point[0]:point[1]]
@@ -154,22 +161,22 @@ class CardPredictor:
                 if len(wave_peaks) <= 6:
                     continue
                 part_cards = img_math.seperate_card(gray_img, wave_peaks)
-                for i, part_card in enumerate(part_cards):
+                for k, part_card in enumerate(part_cards):
                     if np.mean(part_card) < 255 / 5:
                         continue
                     part_card_old = part_card
                     w = abs(part_card.shape[1] - SZ) // 2
                     part_card = cv2.copyMakeBorder(part_card, 0, 0, w, w, cv2.BORDER_CONSTANT, value=[0, 0, 0])
                     part_card = cv2.resize(part_card, (SZ, SZ), interpolation=cv2.INTER_AREA)
-                    cv2.imwrite(f"tmp/plate_char_{i}_{color}.jpg", part_card)
+                    cv2.imwrite(f"tmp/plate_char_{k}_{color}.jpg", part_card)
                     part_card = img_recognition.preprocess_hog([part_card])
-                    if i == 0:
+                    if k == 0:
                         resp = self.modelchinese.predict(part_card)
                         charactor = img_recognition.provinces[int(resp[0]) - PROVINCE_START]
                     else:
                         resp = self.model.predict(part_card)
                         charactor = chr(int(resp[0]))
-                    if charactor == "1" and i == len(part_cards) - 1:
+                    if charactor == "1" and k == len(part_cards) - 1:
                         if part_card_old.shape[0] / part_card_old.shape[1] >= 7:
                             continue
                     predict_result.append(charactor)
@@ -179,16 +186,72 @@ class CardPredictor:
                 break
         return predict_str, roi, card_color
 
+
+# 添加便于GUI调用的函数
+def recognize_plate_from_image(image):
+    """
+    从图像中识别车牌
+
+    参数:
+        image: cv2图像对象或图像文件路径
+
+    返回:
+        dict: 包含识别结果的字典
+        {
+            'plate_number': str,     # 识别的车牌号
+            'plate_color': str,      # 车牌颜色
+            'roi': numpy.ndarray,    # 提取的车牌区域图像
+            'edge_image': numpy.ndarray,  # 边缘检测结果图像
+            'success': bool          # 是否识别成功
+        }
+    """
+    try:
+        if not os.path.exists("tmp"):
+            os.mkdir("tmp")
+
+        predictor = CardPredictor()
+        predictor.train_svm()
+
+        # 第一步：预处理
+        img_edge2, oldimg = predictor.img_first_pre(image)
+
+        # 第二步：车牌识别
+        if type(image) == type(""):
+            img_bgr = cv2.imread(image)
+        else:
+            img_bgr = image
+
+        result, roi, color = predictor.img_only_color(img_bgr, oldimg, img_edge2)
+
+        return {
+            'plate_number': result if result else "",
+            'plate_color': color if color else "",
+            'roi': roi,
+            'edge_image': img_edge2,
+            'success': bool(result and roi is not None)
+        }
+    except Exception as e:
+        print(f"车牌识别错误: {str(e)}")
+        return {
+            'plate_number': "",
+            'plate_color': "",
+            'roi': None,
+            'edge_image': None,
+            'success': False,
+            'error': str(e)
+        }
+
+
+def img_read(filename):
+    """读取图片文件"""
+    return cv2.imread(filename)
+
+
 if __name__ == "__main__":
     # 这里替换为你的图片路径
     image_path = "1.jpg"
-    if not os.path.exists("tmp"):
-        os.mkdir("tmp")
-    predictor = CardPredictor()
-    predictor.train_svm()
-    img_edge2, oldimg = predictor.img_first_pre(image_path)
-    img_bgr = cv2.imread(image_path)
-    result, roi, color = predictor.img_only_color(img_bgr, oldimg, img_edge2)
-    print("识别结果:", result)
-    print("车牌颜色:", color)
+    result = recognize_plate_from_image(image_path)
+    print("识别结果:", result['plate_number'])
+    print("车牌颜色:", result['plate_color'])
+    print("识别成功:", result['success'])
     print("每一步处理图片已保存在 tmp/ 目录下")
