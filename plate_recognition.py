@@ -1,8 +1,8 @@
 import os
 import cv2
 import numpy as np
-import img_math
-import img_recognition
+import plate_process
+import svm
 
 SZ = 20  # 训练图片长宽
 MAX_WIDTH = 1000  # 原始图片最大宽度
@@ -103,9 +103,9 @@ class CardPredictor:
         cv2.imwrite("tmp/step15_color_close.jpg", img_edge1)
         img_edge2 = cv2.morphologyEx(img_edge1, cv2.MORPH_OPEN, Matrix)
         cv2.imwrite("tmp/step16_color_open.jpg", img_edge2)
-        card_contours = img_math.img_findContours(img_edge2)
-        card_imgs = img_math.img_Transform(card_contours, oldimg, pic_width, pic_hight)
-        colors, car_imgs = img_math.img_color(card_imgs)
+        card_contours = plate_process.img_findContours(img_edge2)
+        card_imgs = plate_process.img_Transform(card_contours, oldimg, pic_width, pic_hight)
+        colors, car_imgs = plate_process.img_color(card_imgs)
         predict_result = []
         predict_str = ""
         roi = None
@@ -126,7 +126,7 @@ class CardPredictor:
                 x_min = np.min(x_histogram)
                 x_average = np.sum(x_histogram) / x_histogram.shape[0]
                 x_threshold = (x_min + x_average) / 2
-                wave_peaks = img_math.find_waves(x_threshold, x_histogram)
+                wave_peaks = plate_process.find_waves(x_threshold, x_histogram)
                 if len(wave_peaks) == 0:
                     continue
                 wave = max(wave_peaks, key=lambda x: x[1] - x[0])
@@ -137,7 +137,7 @@ class CardPredictor:
                 y_min = np.min(y_histogram)
                 y_average = np.sum(y_histogram) / y_histogram.shape[0]
                 y_threshold = (y_min + y_average) / 5
-                wave_peaks = img_math.find_waves(y_threshold, y_histogram)
+                wave_peaks = plate_process.find_waves(y_threshold, y_histogram)
                 if len(wave_peaks) < 6:
                     continue
                 wave = max(wave_peaks, key=lambda x: x[1] - x[0])
@@ -160,7 +160,7 @@ class CardPredictor:
                     wave_peaks.pop(2)
                 if len(wave_peaks) <= 6:
                     continue
-                part_cards = img_math.seperate_card(gray_img, wave_peaks)
+                part_cards = plate_process.seperate_card(gray_img, wave_peaks)
                 for k, part_card in enumerate(part_cards):
                     if np.mean(part_card) < 255 / 5:
                         continue
@@ -169,10 +169,10 @@ class CardPredictor:
                     part_card = cv2.copyMakeBorder(part_card, 0, 0, w, w, cv2.BORDER_CONSTANT, value=[0, 0, 0])
                     part_card = cv2.resize(part_card, (SZ, SZ), interpolation=cv2.INTER_AREA)
                     cv2.imwrite(f"tmp/plate_char_{k}_{color}.jpg", part_card)
-                    part_card = img_recognition.preprocess_hog([part_card])
+                    part_card = svm.preprocess_hog([part_card])
                     if k == 0:
                         resp = self.modelchinese.predict(part_card)
-                        charactor = img_recognition.provinces[int(resp[0]) - PROVINCE_START]
+                        charactor = svm.provinces[int(resp[0]) - PROVINCE_START]
                     else:
                         resp = self.model.predict(part_card)
                         charactor = chr(int(resp[0]))
@@ -245,13 +245,3 @@ def recognize_plate_from_image(image):
 def img_read(filename):
     """读取图片文件"""
     return cv2.imread(filename)
-
-
-if __name__ == "__main__":
-    # 这里替换为你的图片路径
-    image_path = "1.jpg"
-    result = recognize_plate_from_image(image_path)
-    print("识别结果:", result['plate_number'])
-    print("车牌颜色:", result['plate_color'])
-    print("识别成功:", result['success'])
-    print("每一步处理图片已保存在 tmp/ 目录下")
